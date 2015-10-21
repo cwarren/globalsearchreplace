@@ -1,0 +1,126 @@
+#!/usr/bin/perl
+
+use strict;
+use Symbol;
+
+# written 03/22/2000 by csw
+
+# glosr is a global-search-and-replace script. It takes a minimum of
+# two arguments: the first arg is the string being searched for, the
+# second is the string to put in place of the first, and the third and
+# succeeding arguments are the files on which to perform this search
+# and replace.
+
+#    gsr searchTerm replaceTerm [file]*
+
+# for each potential replacement the script will give some context and
+# ask if the replacement should be made
+
+my $FORCE = 0; # force replace as opposed to the default interactive version
+my $CONTEXT_SIZE = 2;
+
+my $PLACE_HOLDER_ST  = "+SRCH$$".time."+";
+my $PLACE_HOLDER_REP = "+RPLC$$".time."+";
+
+# pulls the search and replace terms off the arg list, leaving all files
+my $searchTerm  = shift @ARGV;
+my $replaceTerm = shift @ARGV;
+
+my @changedFiles = ();
+
+foreach my $file (@ARGV) {
+    my (
+	$FIN,
+	$FOUT,
+	$replaceCount,
+	@fileLines
+	);
+
+    $FIN = gensym();
+    $FOUT = gensym();
+    $replaceCount = 0;
+
+    open($FIN,$file);
+    chomp(@fileLines = <$FIN>);
+    close($FIN);
+
+    if ($FORCE) {
+	foreach (@fileLines) {
+	    s/\Q$searchTerm\E/$replaceTerm/g;
+	}
+    } else {
+
+	for (my $i=0; $i<=$#fileLines; $i++) {
+
+	    if ($fileLines[$i] =~ m/\Q$searchTerm\E/) {
+		print "\n";
+		for my $offset ((-1*$CONTEXT_SIZE)..$CONTEXT_SIZE) {
+		    if ($i + $offset < 0) {
+			next; 
+		    } elsif ($i + $offset > $#fileLines) {
+			last;
+		    } else {
+			print "$file: $fileLines[$i+$offset]\n";
+			if ($offset == 0) {
+			    for (1..(length($file)+length($`)+2)) { 
+				print ' '; 
+			    }
+			    for (1..length($searchTerm)) { print '^'; }
+			    print "\n";
+			}
+		    }
+		}
+		print "\n";
+		
+		if (userQuery("Replace?")) {
+		    $fileLines[$i] =~ s/\Q$searchTerm\E/$PLACE_HOLDER_REP/;
+		    $replaceCount++;
+		} else {
+		    $fileLines[$i] =~ s/\Q$searchTerm\E/$PLACE_HOLDER_ST/;
+		}
+		$i--;
+		print "\n";
+	    } 
+	    $fileLines[$i] =~ s/\Q$PLACE_HOLDER_ST\E/$searchTerm/g;
+	    $fileLines[$i] =~ s/\Q$PLACE_HOLDER_REP\E/$replaceTerm/g;
+	}
+	
+	print "\nReplaced $replaceCount occurence" . 
+	    ($replaceCount==1 ? '' : 's') . 
+		" of '$searchTerm' with '$replaceTerm' in $file.\n";
+    }
+
+    if ($replaceCount > 0) {
+	push(@changedFiles,$file);
+    }
+
+    open($FOUT,">$file");
+    print $FOUT join("\n",@fileLines);
+    close($FOUT);
+}
+
+print "\n\nFiles changed are:\n";
+print join(' ',@changedFiles);
+print "\n\n";
+
+exit;
+
+##############################################
+
+sub userQuery
+{
+    my ($qstring) = @_;
+
+    my $response = '';
+    
+    while (! ($response =~ /^\s*(y|n)\s*$/i)) {
+	print "$qstring \[y/n\] ";
+	$response = <STDIN>;
+    }
+    
+    if ($response =~ /^\s*y\s*$/i) {
+	return 1;
+    } else {
+	return 0;
+    }
+}
